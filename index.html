@@ -57,7 +57,7 @@
 
 <h2>File Name Auto Renamer</h2>
 <div class="desc">
-  Rules: lowercase only / spaces → hyphen / remove special characters / --- → - /
+  Rules: lowercase only / spaces → hyphen / underscores → hyphen / remove special characters / --- → - /
   trim leading & trailing hyphens / handle duplicates with -2, -3
 </div>
 
@@ -104,23 +104,25 @@
     // 1. Convert to lowercase
     name = name.toLowerCase();
 
-    // 2. Replace all whitespace with hyphens
+    // 2. Replace underscores with hyphens
+    name = name.replace(/_+/g, '-');
+
+    // 3. Replace all whitespace with hyphens
     name = name.replace(/\s+/g, '-');
 
-    // 3. Remove special characters
-    //    Keep only a–z, 0–9, and hyphens
+    // 4. Remove special characters (keep only a–z, 0–9, and hyphens)
     name = name.replace(/[^a-z0-9-]/g, '');
 
-    // 4. Replace multiple hyphens (---) with a single hyphen
+    // 5. Replace multiple hyphens (---) with a single hyphen
     name = name.replace(/-+/g, '-');
 
-    // 5. Remove leading and trailing hyphens
+    // 6. Remove leading and trailing hyphens
     name = name.replace(/^-+|-+$/g, '');
 
-    // 6. Fallback if the name becomes empty
+    // 7. Fallback if the name becomes empty
     if (!name) name = 'file';
 
-    // 7. Handle duplicate file names by appending -2, -3, etc.
+    // 8. Handle duplicate file names by appending -2, -3, etc.
     let finalName = name + ext;
     let count = 2;
 
@@ -158,12 +160,27 @@
   }
 
   /**
-   * Process dropped or selected files
+   * Start a new batch (clears previous history)
    */
-  function handleFiles(fileList) {
-    const usedNames = new Set(files.map(f => f.renamed));
+  function startNewBatch() {
+    files = [];
+    render();
+  }
 
-    for (const file of fileList) {
+  /**
+   * Process dropped or selected files
+   * @param {FileList|File[]} fileList
+   * @param {boolean} isNewBatch - if true, clears history before processing
+   */
+  function handleFiles(fileList, isNewBatch = false) {
+    const list = Array.from(fileList || []);
+    if (list.length === 0) return;
+
+    if (isNewBatch) startNewBatch();
+
+    const usedNames = new Set(); // new batch => dedupe only within this batch
+
+    for (const file of list) {
       const renamed = renameFile(file.name, usedNames);
       files.push({
         file,
@@ -187,7 +204,8 @@
   drop.addEventListener('drop', e => {
     e.preventDefault();
     drop.classList.remove('drag');
-    handleFiles(e.dataTransfer.files);
+    // New drop = new batch
+    handleFiles(e.dataTransfer.files, true);
   });
 
   // Click to open file picker
@@ -195,7 +213,11 @@
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.onchange = () => handleFiles(input.files);
+    input.onchange = () => {
+      // New selection = new batch
+      handleFiles(input.files, true);
+      input.value = '';
+    };
     input.click();
   });
 
