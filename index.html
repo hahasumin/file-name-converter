@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>File Renamer</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 24px;
+    }
+    h2 { margin-bottom: 8px; }
+    .desc { color:#555; font-size:14px; margin-bottom:16px; }
+    .drop {
+      border: 2px dashed #999;
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .drop.drag {
+      border-color: #111;
+      background: #f5f5f5;
+    }
+    button {
+      margin-top: 16px;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      background: #111;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e5e5;
+      padding: 10px;
+      text-align: left;
+    }
+    code {
+      background: #f2f2f2;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>File Name Auto Renamer</h2>
+<div class="desc">
+  Rules: lowercase only / spaces → hyphen / remove special characters / --- → - /
+  trim leading & trailing hyphens / handle duplicates with -2, -3
+</div>
+
+<div id="drop" class="drop">
+  Drag & drop files here<br/>
+  (or click to select files)
+</div>
+
+<button id="download" disabled>Download ZIP</button>
+
+<table id="table" style="display:none">
+  <thead>
+    <tr>
+      <th>Original file name</th>
+      <th>Renamed file name</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<!-- JSZip library for client-side ZIP creation -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+  const drop = document.getElementById('drop');
+  const table = document.getElementById('table');
+  const tbody = table.querySelector('tbody');
+  const downloadBtn = document.getElementById('download');
+
+  let files = [];
+
+  /**
+   * Rename a file according to the defined rules
+   * @param {string} originalName
+   * @param {Set<string>} usedNames
+   * @returns {string}
+   */
+  function renameFile(originalName, usedNames) {
+    // Split extension from filename
+    const dot = originalName.lastIndexOf('.');
+    const hasExt = dot > 0;
+    const ext = hasExt ? originalName.slice(dot).toLowerCase() : '';
+    let name = hasExt ? originalName.slice(0, dot) : originalName;
+
+    // 1. Convert to lowercase
+    name = name.toLowerCase();
+
+    // 2. Replace all whitespace with hyphens
+    name = name.replace(/\s+/g, '-');
+
+    // 3. Remove special characters
+    //    Keep only a–z, 0–9, and hyphens
+    name = name.replace(/[^a-z0-9-]/g, '');
+
+    // 4. Replace multiple hyphens (---) with a single hyphen
+    name = name.replace(/-+/g, '-');
+
+    // 5. Remove leading and trailing hyphens
+    name = name.replace(/^-+|-+$/g, '');
+
+    // 6. Fallback if the name becomes empty
+    if (!name) name = 'file';
+
+    // 7. Handle duplicate file names by appending -2, -3, etc.
+    let finalName = name + ext;
+    let count = 2;
+
+    while (usedNames.has(finalName)) {
+      finalName = `${name}-${count}${ext}`;
+      count++;
+    }
+
+    usedNames.add(finalName);
+    return finalName;
+  }
+
+  /**
+   * Render the preview table
+   */
+  function render() {
+    tbody.innerHTML = '';
+    if (files.length === 0) {
+      table.style.display = 'none';
+      downloadBtn.disabled = true;
+      return;
+    }
+
+    table.style.display = '';
+    downloadBtn.disabled = false;
+
+    for (const f of files) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><code>${f.original}</code></td>
+        <td><code>${f.renamed}</code></td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  /**
+   * Process dropped or selected files
+   */
+  function handleFiles(fileList) {
+    const usedNames = new Set(files.map(f => f.renamed));
+
+    for (const file of fileList) {
+      const renamed = renameFile(file.name, usedNames);
+      files.push({
+        file,
+        original: file.name,
+        renamed
+      });
+    }
+    render();
+  }
+
+  // Drag & drop handlers
+  drop.addEventListener('dragover', e => {
+    e.preventDefault();
+    drop.classList.add('drag');
+  });
+
+  drop.addEventListener('dragleave', () => {
+    drop.classList.remove('drag');
+  });
+
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  // Click to open file picker
+  drop.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = () => handleFiles(input.files);
+    input.click();
+  });
+
+  // Download renamed files as a ZIP
+  downloadBtn.addEventListener('click', async () => {
+    const zip = new JSZip();
+    for (const f of files) {
+      const buf = await f.file.arrayBuffer();
+      zip.file(f.renamed, buf);
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'renamed-files.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+</script>
+
+</body>
+</html>
